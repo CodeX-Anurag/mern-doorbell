@@ -1,15 +1,18 @@
-//PORT COM whatever
-//BOARD: AI Thinker ESP32-CAM
-//UPLOAD-SPEED: 115200
-//PARTITION SCHEME: Huge App
-
 #include "esp_camera.h"
 #include <WiFi.h>
 #include <HTTPClient.h>
 
-// ========================
-// CAMERA MODEL AI THINKER
-// ========================
+// ==== WiFi credentials ====
+const char* ssid = "YOUR_WIFI_SSID";
+const char* password = "YOUR_WIFI_PASSWORD";
+
+// ==== Server endpoint ====
+String serverUrl = "http://192.168.1.100:5000/upload"; // change IP to your Node.js backend
+
+// ==== Button GPIO ====
+#define BUTTON_PIN 13
+
+// ==== Camera pin configuration for AI Thinker ====
 #define PWDN_GPIO_NUM     32
 #define RESET_GPIO_NUM    -1
 #define XCLK_GPIO_NUM      0
@@ -24,26 +27,25 @@
 #define Y4_GPIO_NUM       19
 #define Y3_GPIO_NUM       18
 #define Y2_GPIO_NUM        5
-#define VSYNC_GPIO_NUM     25
-#define HREF_GPIO_NUM      23
-#define PCLK_GPIO_NUM      22
+#define VSYNC_GPIO_NUM    25
+#define HREF_GPIO_NUM     23
+#define PCLK_GPIO_NUM     22
 
-// ========================
-// USER CONFIG
-// ========================
-const char* ssid = "YOUR_WIFI_SSID";
-const char* password = "YOUR_WIFI_PASSWORD";
+void setup() {
+  Serial.begin(115200);
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
 
-// Replace this with your backend URL
-String serverURL = "http://<YOUR_LAPTOP_IP>:5000/upload";
+  Serial.println("Connecting to WiFi...");
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWiFi connected!");
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
 
-const int buttonPin = 13; // Push button pin
-bool lastButtonState = HIGH;
-
-// ========================
-// CAMERA SETUP FUNCTION
-// ========================
-void setupCamera() {
+  // ==== Camera configuration ====
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer   = LEDC_TIMER_0;
@@ -66,83 +68,53 @@ void setupCamera() {
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
 
-  // Higher quality image
-  config.frame_size = FRAMESIZE_SVGA;
-  config.jpeg_quality = 12;
-  config.fb_count = 1;
+  // For non-PSRAM, use small frame size and single buffer
+  config.frame_size = FRAMESIZE_QVGA; // 320x240
+  config.jpeg_quality = 15;           // Higher number = lower quality
+  config.fb_count = 1;                // Only one frame buffer
 
-  // Initialize the camera
+  // ==== Initialize camera ====
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
-    Serial.printf("Camera init failed: 0x%x\n", err);
-    ESP.restart();
+    Serial.printf("Camera init failed with error 0x%x", err);
+    while (true) { delay(1000); }
   }
+
+  Serial.println("Camera init successful!");
 }
 
-// ========================
-// CAPTURE AND SEND IMAGE
-// ========================
-void captureAndSendImage() {
-  camera_fb_t* fb = esp_camera_fb_get();
-  if (!fb) {
-    Serial.println("Camera capture failed");
-    return;
-  }
-
-  Serial.println("Captured image. Sending...");
-
-  HTTPClient http;
-  http.begin(serverURL);
-  http.addHeader("Content-Type", "image/jpeg");
-
-  int httpResponseCode = http.POST(fb->buf, fb->len);
-
-  if (httpResponseCode > 0) {
-    Serial.printf("Upload OK, response: %d\n", httpResponseCode);
-  } else {
-    Serial.printf("Upload failed, error: %s\n", http.errorToString(httpResponseCode).c_str());
-  }
-
-  http.end();
-  esp_camera_fb_return(fb);
-}
-
-// ========================
-// SETUP
-// ========================
-void setup() {
-  Serial.begin(115200);
-  pinMode(buttonPin, INPUT_PULLUP);
-
-  // Connect to Wi-Fi
-  WiFi.begin(ssid, password);
-  Serial.print("Connecting to WiFi");
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("\nWiFi connected!");
-  Serial.print("ESP IP Address: ");
-  Serial.println(WiFi.localIP());
-
-  // Initialize camera
-  setupCamera();
-  Serial.println("Camera initialized successfully!");
-}
-
-// ========================
-// MAIN LOOP
-// ========================
 void loop() {
-  bool currentState = digitalRead(buttonPin);
-
-  // Button pressed (LOW since using INPUT_PULLUP)
-  if (lastButtonState == HIGH && currentState == LOW) {
+  // Wait for button press
+  if (digitalRead(BUTTON_PIN) == LOW) {
     Serial.println("Button pressed! Capturing image...");
-    captureAndSendImage();
-    delay(1000); // prevent rapid triggers
-  }
+    delay(500); // debounce
 
-  lastButtonState = currentState;
-  delay(100);
+    camera_fb_t *fb = esp_camera_fb_get();
+    if (!fb) {
+      Serial.println("Camera capture failed!");
+      return;
+    }
+
+    if (WiFi.status() == WL_CONNECTED) {
+      HTTPClient http;
+      http.begin(serverUrl);
+      http.addHeader("Content-Type", "image/jpeg");
+
+      int httpResponseCode = http.POST(fb->buf, fb->len);
+
+      if (httpResponseCode > 0) {
+        Serial.printf("Image sent successfully! Server responded: %d\n", httpResponseCode);
+      } else {
+        Serial.printf("Error sending image: %s\n", http.errorToString(httpResponseCode).c_str());
+      }
+
+      http.end();
+    } else {
+      Serial.println("WiFi not connected!");
+    }
+
+    esp_camera_fb_return(fb);
+    delay(2000); // small delay to avoid multiple triggers
+  }
 }
+
