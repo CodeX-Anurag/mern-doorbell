@@ -1,0 +1,37 @@
+# === Node.js / Backend ===
+doorbell-backend/node_modules/
+doorbell-backend/uploads/
+doorbell-backend/.env
+doorbell-backend/package-lock.json
+
+# === React / Frontend ===
+doorbell-frontend/node_modules/
+doorbell-frontend/dist/
+doorbell-frontend/.env
+doorbell-frontend/.vite/
+doorbell-frontend/package-lock.json
+
+# === ESP32 / Arduino ===
+esp_doorbell/build/
+esp_doorbell/.pio/
+esp_doorbell/.vscode/
+*.elf
+*.bin
+*.hex
+*.map
+
+# === OS / Editor files ===
+.DS_Store
+Thumbs.db
+*.log
+*.swp
+*.swo
+*.tmp
+
+# === Global ===
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.idea/
+.vscode/
+
